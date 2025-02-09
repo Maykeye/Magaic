@@ -81,7 +81,7 @@ end
 
 function M.do_send(is_chat, prompt)
   local generation_mode = "raw";
-  if is_chat then 
+  if is_chat then
     generation_mode = "chat";
   end
   return vim.fn.system({"ollama-query.py", M.MODEL, generation_mode, prompt});
@@ -181,7 +181,4 @@ function M.display_buffer()
   M.get_buffer()
 end
 
--- M.general_quick_ask() -- REPLACES ALL CONTENT 
--- M.general_completion() -- APPEND TO CONTENT
--- M.display_buffer () -- DISPLAY BUFFER
 return M
