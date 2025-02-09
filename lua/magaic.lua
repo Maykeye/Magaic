@@ -26,6 +26,10 @@ function M.save_model_id()
 end
 
 
+M.KNOWN_EMBEDDING_MODELS = {
+  ["all-minilm"]=1
+}
+
 function M.change_model()
   local text = vim.fn.system("ollama list");
   local lines = M.split_line(text);
@@ -34,6 +38,17 @@ function M.change_model()
   local candidates = "";
   print("\n");
 
+  -- Remove embedding movdels from the list
+  local filtered_lines = {}
+  for _, line in ipairs(lines) do
+    local prefix = line:gmatch("[^:]+")();
+    if not M.KNOWN_EMBEDDING_MODELS[prefix] then
+      filtered_lines[#filtered_lines+1] = line;
+    end
+  end
+  lines = filtered_lines
+
+  -- Match against the rest
   for i, line in ipairs(lines) do
     local current = line:gmatch("[^ ]+")();
     if i ~= 1 and current ~= nil then
@@ -50,6 +65,7 @@ function M.change_model()
       end
     end
   end
+
   if best_match == nil or req == "" then
     if req ~= "" then
       print("Unable to match " .. req .. ". Models: "..candidates)
