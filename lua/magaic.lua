@@ -35,7 +35,7 @@ function M.change_model()
   local lines = M.split_line(text);
   local best_match = nil;
   local req = vim.fn.input("Switch " .. M.MODEL .." to: ");
-  local candidates = "";
+  local candidates = {{"header"}};
   print("\n");
 
   -- Remove embedding movdels from the list
@@ -52,10 +52,7 @@ function M.change_model()
   for i, line in ipairs(lines) do
     local current = line:gmatch("[^ ]+")();
     if i ~= 1 and current ~= nil then
-      if #candidates ~= 0 then
-        candidates = candidates .. ", "
-      end
-      candidates = candidates .. current
+      candidates[#candidates+1] = {current.."\n"};
       if req ~= "" and line:match(req) then
         if best_match ~= nil then
           print("Too many models match " .. req .. ": "..best_match .. ", " .. current)
@@ -68,9 +65,11 @@ function M.change_model()
 
   if best_match == nil or req == "" then
     if req ~= "" then
-      print("Unable to match " .. req .. ". Models: "..candidates)
+      candidates[1] = {"Unable to match against:\n", "Error"}
+      vim.api.nvim_echo(candidates, false, {});
     else
-      print("Models: "..candidates)
+      candidates[1] = {"Models:\n"}
+      vim.api.nvim_echo(candidates, false, {});
     end
     return
   end
