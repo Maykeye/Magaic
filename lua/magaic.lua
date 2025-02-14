@@ -65,7 +65,7 @@ function M.change_model()
 
   if best_match == nil or req == "" then
     if req ~= "" then
-      candidates[1] = {"Unable to match against:\n", "Error"}
+      candidates[1] = {"Unable to match against "..req .. ":\n", "Error"}
       vim.api.nvim_echo(candidates, false, {});
     else
       candidates[1] = {"Models:\n"}
