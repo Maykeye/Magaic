@@ -1,9 +1,5 @@
 local M = {}  -- Our module table
-
-
 local data_file = vim.fn.expand("$HOME/.config/nvim/magaic.cfg")
-
-
 M.MODEL="olmo2:7b-1124-instruct-q4_K_M"
 VIEW_HEIGHT=15
 
