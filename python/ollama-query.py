@@ -5,16 +5,22 @@ import os
 import sys
 import sqlite3
 
+LOGGING_PATH_ENV = "OLLAMA_QUERY_LOGGING_PATH"
+
+
+def create_table(conn):
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS log(model TEXT NOT NULL, mode TEXT NOT NULL, request TEXT NOT NULL, response NULL, error NULL DEFAULT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+    )
+
 
 def log(model, mode, request, response, error):
-    path = os.environ.get("OLLAMA_QUERY_LOGGING_PATH")
+    path = os.environ.get(LOGGING_PATH_ENV)
     if not path:
         return
     try:
         conn = sqlite3.connect(path)
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS log(model TEXT NOT NULL, mode TEXT NOT NULL, request TEXT NOT NULL, response NULL, error NULL DEFAULT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)"
-        )
+        create_table(conn)
         with conn as cur:
             cur.execute(
                 "INSERT INTO log(model, mode, request, response, error) VALUES(?,?,?,?,?)",
@@ -24,10 +30,25 @@ def log(model, mode, request, response, error):
         print(f"Logging error: {e}", file=sys.stderr)
 
 
+def query_log(query):
+    path = os.environ.get(LOGGING_PATH_ENV)
+    if not path:
+        raise Exception(f"No {LOGGING_PATH_ENV}")
+    try:
+        conn = sqlite3.connect(path)
+        conn.row_factory = sqlite3.Row
+        create_table(conn)
+        with conn as cur:
+            data = cur.execute(query).fetchall()
+            data = [dict(row) for row in data]
+            print(json.dumps(data, indent=2, ensure_ascii=False))
+    except Exception as e:
+        print(f"Logging error: {e}", file=sys.stderr)
+
+
 def raw(model, prompt):
     url = "http://localhost:11434/api/generate"
     payload = {"model": model, "prompt": prompt, "stream": False}
-    # open("/tmp/last.prompt", "w").write(json.dumps(payload, indent=2))
 
     response = requests.post(url, json=payload)
 
@@ -53,6 +74,11 @@ def chat(model, prompt: str):
         "<AI>": "assistant",
         "<SYS>": "system",
         "<SYSTEM>": "system",
+        "<usr>": "user",
+        "<user>": "user",
+        "<ai>": "assistant",
+        "<sys>": "system",
+        "<system>": "system",
     }
 
     for line in lines:
@@ -74,7 +100,12 @@ def chat(model, prompt: str):
                 messages.append({"role": "user", "content": line})
 
     prompt = json.dumps(messages)
-    payload = {"model": model, "messages": messages, "stream": False}
+    payload = {
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "options": {"num_ctx": 8192},
+    }
     response = requests.post(url, json=payload)
 
     if response.ok:
@@ -90,6 +121,10 @@ def chat(model, prompt: str):
 def main():
     model = sys.argv[1]
     mode = sys.argv[2]
+    if model == "log":
+        assert len(sys.argv) == 3
+        return query_log(mode)
+
     if mode == "raw":
         raw(model, sys.argv[3])
     elif mode == "chat":
