@@ -82,14 +82,38 @@ function M.change_model()
 end
 
 function M.do_send_llama_cpp(is_chat, prompt)
+	local run = function(args)
+		-- TODO:
+		if true then
+			return vim.fn.system(args)
+		end
+		M.job_id = vim.fn.jobstart(args, {
+			stdout_buffered = false,
+			stderr_buffered = false,
+			on_stdout = function(_, data, _)
+				if data then
+					-- Append each line of output to the buffer
+					local lines = vim.api.nvim_buf_get_lines(M.buffer_id, -1, -1, true)
+					for _, line in ipairs(data) do
+						if line ~= "" then
+							table.insert(lines, line)
+						end
+					end
+					vim.api.nvim_buf_set_lines(M.buffer_id, -1, -1, true, lines)
+				end
+			end,
+		})
+		return ""
+	end
+
 	if is_chat then
 		if M.MODEL == LLAMA_CPP_SERVER_THINK then
-			return vim.fn.system({ "llama.cpp-raw-query.py", prompt })
+			return run({ "llama.cpp-raw-query.py", prompt })
 		else
-			return vim.fn.system({ "llama.cpp-raw-query.py", "--no-think", prompt })
+			return run({ "llama.cpp-raw-query.py", "--no-think", prompt })
 		end
 	end
-	return vim.fn.system({ "llama.cpp-raw-query.py", "--raw", "--no-think", prompt })
+	return run({ "llama.cpp-raw-query.py", "--raw", "--no-think", prompt })
 end
 
 function M.do_send_ollama(is_chat, prompt)
@@ -127,6 +151,16 @@ function M.replace_buffer_content(buffer_id, new_content)
 	vim.api.nvim_buf_set_text(buffer_id, 0, 0, 0, 0, new_content)
 end
 
+function M.rfind(haystack, needle)
+	local r_start, r_end = string.find(string.reverse(haystack), string.reverse(needle))
+	if r_start == nil then
+		return nil
+	end
+	local len = string.len(haystack)
+	local n_start, n_end = len - r_end + 1, len - r_start + 1
+	return n_start
+end
+
 function M.general_quick_ask()
 	local q = vim.fn.input("Contextless: ")
 	if q == "" then
@@ -151,7 +185,12 @@ function M.impl_completion(is_chat)
 	end
 	local text = M.do_send(is_chat, prompt)
 	if is_chat then
-		text = "\n<AI>: " .. text
+		local ai_pos = M.rfind(string.upper("prompt"), "\n<AI>") or 0
+		local usr_pos = M.rfind(string.upper("prompt"), "\n<USR>") or 0
+		local user_pos = M.rfind(string.upper("prompt"), "\n<USR>") or 0
+		if usr_pos > ai_pos or user_pos > ai_pos or ai_pos == 0 then
+			text = "\n<AI>: " .. text
+		end
 	end
 
 	M.replace_buffer_content(buf, prompt .. text)
@@ -183,7 +222,7 @@ end
 
 function M.get_buffer()
 	if M.buffer_id ~= nil and not vim.api.nvim_buf_is_valid(M.buffer_id) then
-		M.buffer_d = nil
+		M.buffer_id = nil
 	end
 
 	if M.buffer_id == nil then

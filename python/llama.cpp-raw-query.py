@@ -19,6 +19,7 @@ def create_table(conn):
 def log(model, mode, request, response, error):
     path = os.environ.get(LOGGING_PATH_ENV)
     if not path:
+        print(f"*** LOGGING DISABLED: {LOGGING_PATH_ENV}")
         return
     try:
         conn = sqlite3.connect(path)
@@ -28,6 +29,7 @@ def log(model, mode, request, response, error):
                 "INSERT INTO log(model, mode, request, response, error) VALUES(?,?,?,?,?)",
                 (model, mode, request, response, error),
             )
+        conn.close()
     except Exception as e:
         print(f"Logging error: {e}", file=sys.stderr)
 
@@ -97,21 +99,24 @@ else:
     raw_prompt = "<sys>:You are helpful assistant, your theme is touhou lore.\n<USR>who is Marisa"
 
 prompt = convert_prompt(raw_prompt)
-
-data = {"prompt": prompt, "stream": True}
+N_PREDICT = 0
+request_data = {"prompt": prompt, "stream": True, "params": {"n_predict": N_PREDICT}}
 
 response = requests.get("http://localhost:10000/props")
 props = response.content.decode()
 props_dict = json.loads(props)
 model_id = props_dict["model_path"]
-
+print(prompt)
 
 total_response = ""
 error_message = None
 can_print = use_think
+current_line = ""
+received = 0
+line_mode = True
 try:
     response = requests.post(
-        "http://localhost:10000/completion", json=data, stream=True
+        "http://localhost:10000/completion", json=request_data, stream=True
     )
     response.raise_for_status()
     for data in response.iter_lines(decode_unicode=True):
@@ -121,11 +126,23 @@ try:
         content = json.loads(data)["content"]
         total_response += content
         if can_print:
-            print(content, flush=True, end="")
+            if not line_mode:
+                print(content, flush=True, end="")
+            else:
+                current_line += content
+                while "\n" in current_line:
+                    pos = current_line.find("\n")
+                    print(current_line[:pos])
+                    current_line = current_line[pos + 1 :]
+
+            received += 1
+            if N_PREDICT > 0 and received >= N_PREDICT:
+                response.close()
+                break
         elif total_response.endswith("\n</think>\n\n"):
             total_response = ""
             can_print = True
-    print()
+    print(current_line)
 except KeyboardInterrupt:
     total_response += "(abort)"
     print("(abort)")
@@ -135,4 +152,5 @@ except Exception as e:
     raise (e)
 
 mode = "chat" if use_prompt else "raw"
-log(model_id, mode, prompt, total_response, error_message)
+request_data["raw_prompt"] = raw_prompt
+log(model_id, mode, json.dumps(request_data), total_response, error_message)
