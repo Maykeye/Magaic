@@ -6,6 +6,7 @@ import sys
 import sqlite3
 
 LOGGING_PATH_ENV = "OLLAMA_QUERY_LOGGING_PATH"
+use_stream = False
 
 
 def create_table(conn):
@@ -100,6 +101,29 @@ def chat(model, prompt: str):
                 messages.append({"role": "user", "content": line})
 
     prompt = json.dumps(messages)
+    if use_stream:
+        chat_stream(model, messages, url, prompt)
+    else:
+        chat_non_stream(model, messages, url, prompt)
+
+
+def chat_stream(model, messages, url, prompt):
+    payload = {
+        "model": model,
+        "messages": messages,
+        "stream": True,
+        "options": {"num_ctx": 8192},
+    }
+
+    response = requests.post(url, json=payload, stream=True)
+    for data in response.iter_lines():
+        if not data:
+            continue
+        as_dict = json.loads(data.decode())
+        print(as_dict["message"]["content"], end="", flush=True)
+
+
+def chat_non_stream(model, messages, url, prompt):
     payload = {
         "model": model,
         "messages": messages,
@@ -119,16 +143,26 @@ def chat(model, prompt: str):
 
 
 def main():
+    if sys.argv[1] == "--stream":
+        global use_stream
+        use_stream = True
+        del sys.argv[1]
+
+    prompt = ""
+
     model = sys.argv[1]
-    mode = sys.argv[2]
+    del sys.argv[1]
+    mode = sys.argv[1]
+    del sys.argv[1]
     if model == "log":
-        assert len(sys.argv) == 3
+        assert len(sys.argv) == 1
         return query_log(mode)
 
+    prompt = prompt or sys.argv[1]
     if mode == "raw":
-        raw(model, sys.argv[3])
+        raw(model, prompt or sys.argv[1])
     elif mode == "chat":
-        chat(model, sys.argv[3])
+        chat(model, sys.argv[1])
     else:
         raise ValueError("invalid query mode")
 
