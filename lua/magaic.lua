@@ -116,6 +116,15 @@ function M.do_send_llama_cpp(is_chat, prompt)
 	return run({ "llama.cpp-raw-query.py", "--raw", "--no-think", prompt })
 end
 
+function M.tee()
+	local path = vim.fn.expand("%:S") -- escape
+	if path == nil then
+		return error("No known filename")
+	end
+	local cmd = "!ollama-tee.py  --file " .. path .. " " .. M.MODEL
+	vim.cmd(cmd)
+end
+
 function M.do_send_ollama(is_chat, prompt)
 	local generation_mode = "raw"
 	if is_chat then
