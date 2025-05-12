@@ -102,6 +102,11 @@ def chat(model, prompt: str):
             print(token, end="", flush=True)
             if file_dst:
                 file_dst.write(token)
+                # pressing Ctrl-C from nvim doesn't send us to KeyboardInterrupt
+                file_dst.flush()
+    except KeyboardInterrupt:
+        print("INTERRUPTED")
+
     finally:
         if file_dst:
             file_dst.close()
