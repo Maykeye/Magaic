@@ -4,10 +4,15 @@ import json
 import sys
 import sqlite3
 import os
+import random
 
+PORT = 10000
 use_prompt = True
 use_think = True
+use_tee = False
 LOGGING_PATH_ENV = "OLLAMA_QUERY_LOGGING_PATH"
+filename = None
+file_dst = None
 
 
 def create_table(conn):
@@ -81,9 +86,10 @@ def convert_prompt(query: str):
 
 
 if len(sys.argv) > 1:
-    if sys.argv[1] == "--raw":
-        del sys.argv[1]
+    if sys.argv[1] in ("--raw", "--tee"):
+        use_tee = sys.argv[1] == "--tee"
         use_prompt = False
+        del sys.argv[1]
 
 if sys.argv[1] == "--no-think":
     del sys.argv[1]
@@ -92,17 +98,22 @@ if sys.argv[1] == "--no-think":
 if len(sys.argv) > 1:
     if sys.argv[1] == "--file":
         assert len(sys.argv) == 3
-        raw_prompt = open(sys.argv[2]).read()
+        filename = sys.argv[2]
+        raw_prompt = open(filename).read()
     else:
         raw_prompt = sys.argv[1]
 else:
     raw_prompt = "<sys>:You are helpful assistant, your theme is touhou lore.\n<USR>who is Marisa"
 
+if use_tee:
+    assert filename, "Filename required for a tee mode"
+    file_dst = open(filename, "a")
+
 prompt = convert_prompt(raw_prompt)
 N_PREDICT = 0
 request_data = {"prompt": prompt, "stream": True, "params": {"n_predict": N_PREDICT}}
 
-response = requests.get("http://localhost:10000/props")
+response = requests.get(f"http://localhost:{PORT}/props")
 props = response.content.decode()
 props_dict = json.loads(props)
 model_id = props_dict["model_path"]
@@ -110,38 +121,32 @@ print(prompt)
 
 total_response = ""
 error_message = None
+always_print = True
 can_print = use_think
 current_line = ""
 received = 0
 line_mode = True
 try:
     response = requests.post(
-        "http://localhost:10000/completion", json=request_data, stream=True
+        f"http://localhost:{PORT}/completion", json=request_data, stream=True
     )
     response.raise_for_status()
-    for data in response.iter_lines(decode_unicode=True):
+    for bdata in response.iter_lines():
+        # iter_lines(decode_unicode=True incorrectly assumes encodeding)
+        data = bdata.decode()
         data = data.strip().removeprefix("data: ")
         if not data:
             continue
         content = json.loads(data)["content"]
         total_response += content
-        if can_print:
-            if not line_mode:
-                print(content, flush=True, end="")
-            else:
-                current_line += content
-                while "\n" in current_line:
-                    pos = current_line.find("\n")
-                    print(current_line[:pos])
-                    current_line = current_line[pos + 1 :]
-
-            received += 1
-            if N_PREDICT > 0 and received >= N_PREDICT:
-                response.close()
-                break
-        elif total_response.endswith("\n</think>\n\n"):
-            total_response = ""
-            can_print = True
+        print(content, flush=True, end="")
+        if file_dst:
+            file_dst.write(content)
+            file_dst.flush()
+        received += 1
+        if N_PREDICT > 0 and received >= N_PREDICT:
+            response.close()
+            break
     print(current_line)
 except KeyboardInterrupt:
     total_response += "(abort)"
@@ -150,6 +155,9 @@ except KeyboardInterrupt:
 except Exception as e:
     error_message = f"{e}"
     raise (e)
+finally:
+    if file_dst:
+        file_dst.close()
 
 mode = "chat" if use_prompt else "raw"
 request_data["raw_prompt"] = raw_prompt

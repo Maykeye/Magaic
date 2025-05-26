@@ -106,7 +106,6 @@ def chat(model, prompt: str):
                 file_dst.flush()
     except KeyboardInterrupt:
         print("INTERRUPTED")
-
     finally:
         if file_dst:
             file_dst.close()

@@ -121,6 +121,12 @@ function M.tee()
 	if path == nil then
 		return error("No known filename")
 	end
+
+	if M.MODEL == LLAMA_CPP_SERVER_NOTHINK or M.MODEL == LLAMA_CPP_SERVER_THINK then
+		local cmd = "!llama.cpp-raw-query.py --tee --file " .. path
+		return vim.cmd(cmd)
+	end
+
 	local cmd = "!ollama-tee.py  --file " .. path .. " " .. M.MODEL
 	vim.cmd(cmd)
 end
