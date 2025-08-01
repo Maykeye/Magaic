@@ -4,13 +4,13 @@ import json
 import sys
 import sqlite3
 import os
-import random
 
 PORT = 10000
+LOGGING_PATH_ENV = "LLM_QUERY_LOGGING_PATH"
+
 use_prompt = True
 use_think = True
 use_tee = False
-LOGGING_PATH_ENV = "OLLAMA_QUERY_LOGGING_PATH"
 filename = None
 file_dst = None
 
@@ -24,7 +24,7 @@ def create_table(conn):
 def log(model, mode, request, response, error):
     path = os.environ.get(LOGGING_PATH_ENV)
     if not path:
-        print(f"*** LOGGING DISABLED: {LOGGING_PATH_ENV}")
+        print(f"*** LOGGING DISABLED: {LOGGING_PATH_ENV}", file=sys.stderr)
         return
     try:
         conn = sqlite3.connect(path)
@@ -121,8 +121,6 @@ print(prompt)
 
 total_response = ""
 error_message = None
-always_print = True
-can_print = use_think
 current_line = ""
 received = 0
 line_mode = True
@@ -133,8 +131,7 @@ try:
     response.raise_for_status()
     for bdata in response.iter_lines():
         # iter_lines(decode_unicode=True incorrectly assumes encodeding)
-        data = bdata.decode()
-        data = data.strip().removeprefix("data: ")
+        data = bdata.decode().strip().removeprefix("data: ")
         if not data:
             continue
         content = json.loads(data)["content"]
@@ -154,7 +151,7 @@ except KeyboardInterrupt:
     error_message = "KeyboardInterrupt"
 except Exception as e:
     error_message = f"{e}"
-    raise (e)
+    raise e
 finally:
     if file_dst:
         file_dst.close()
