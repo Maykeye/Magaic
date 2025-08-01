@@ -1,18 +1,43 @@
 #!/usr/bin/env python
+from typing import Optional, TextIO
 import requests
 import json
 import sys
 import sqlite3
 import os
+from dataclasses import dataclass
 
-PORT = 10000
-LOGGING_PATH_ENV = "LLM_QUERY_LOGGING_PATH"
 
-use_prompt = True
-use_think = True
-use_tee = False
-filename = None
-file_dst = None
+@dataclass
+class Context:
+    port: int = 10000
+    logging_path_env: str = "LLM_QUERY_LOGGING_PATH"
+    logging_path: str = ""
+    input_prompt: str = ""
+
+    use_prompt: bool = True
+    use_think: bool = True
+    use_tee: bool = False
+    filename: Optional[str] = None
+    file_dst: Optional[TextIO] = None
+    n_predict: int = 0
+
+    def __post_init__(self):
+        if path := os.environ.get(self.logging_path_env):
+            self.logging_path = path
+        else:
+            print(
+                f"*** LOGGING DISABLED due to envvar {self.logging_path_env}",
+                file=sys.stderr,
+            )
+
+    def close_dst_file(self):
+        if self.file_dst:
+            self.file_dst.close()
+
+    def url(self, tail: str) -> str:
+        tail = tail.removeprefix("/")
+        return f"http://localhost:{self.port}/{tail}"
 
 
 def create_table(conn):
@@ -21,13 +46,11 @@ def create_table(conn):
     )
 
 
-def log(model, mode, request, response, error):
-    path = os.environ.get(LOGGING_PATH_ENV)
-    if not path:
-        print(f"*** LOGGING DISABLED: {LOGGING_PATH_ENV}", file=sys.stderr)
+def log(ctx: Context, model, mode, request, response, error):
+    if not ctx.logging_path:
         return
     try:
-        conn = sqlite3.connect(path)
+        conn = sqlite3.connect(ctx.logging_path)
         create_table(conn)
         with conn as cur:
             cur.execute(
@@ -39,9 +62,9 @@ def log(model, mode, request, response, error):
         print(f"Logging error: {e}", file=sys.stderr)
 
 
-def convert_prompt(query: str):
-    if not use_prompt:
-        return query
+def convert_prompt(ctx: Context):
+    if not ctx.use_prompt:
+        return ctx.input_prompt
 
     def apply_role(role):
         nonlocal lines
@@ -56,7 +79,7 @@ def convert_prompt(query: str):
             lines[i - 1] += "<|im_end|>"
         return role
 
-    lines = query.splitlines()
+    lines = ctx.input_prompt.splitlines()
     first_line = lines[0].lower()
     if not first_line.startswith("<sys>"):
         if not first_line.startswith("<usr>") and not first_line.startswith("<ai>"):
@@ -74,7 +97,7 @@ def convert_prompt(query: str):
             last_role = apply_role("assistant")
         lines[i] = line
 
-    if not use_think:
+    if not ctx.use_think:
         lines.append("\\no_think")
 
     if last_role != "assistant":
@@ -85,35 +108,45 @@ def convert_prompt(query: str):
     return raw
 
 
-if len(sys.argv) > 1:
-    if sys.argv[1] in ("--raw", "--tee"):
-        use_tee = sys.argv[1] == "--tee"
-        use_prompt = False
+def parse_args() -> Context:
+    ctx = Context()
+    if len(sys.argv) > 1:
+        if sys.argv[1] in ("--raw", "--tee"):
+            ctx.use_tee = sys.argv[1] == "--tee"
+            ctx.use_prompt = False
+            del sys.argv[1]
+
+    if sys.argv[1] == "--no-think":
         del sys.argv[1]
+        ctx.use_think = False
 
-if sys.argv[1] == "--no-think":
-    del sys.argv[1]
-    use_think = False
-
-if len(sys.argv) > 1:
-    if sys.argv[1] == "--file":
-        assert len(sys.argv) == 3
-        filename = sys.argv[2]
-        raw_prompt = open(filename).read()
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "--file":
+            assert len(sys.argv) == 3
+            ctx.filename = sys.argv[2]
+            ctx.input_prompt = open(ctx.filename).read()
+        else:
+            ctx.input_prompt = sys.argv[1]
     else:
-        raw_prompt = sys.argv[1]
-else:
-    raw_prompt = "<sys>:You are helpful assistant, your theme is touhou lore.\n<USR>who is Marisa"
+        ctx.input_prompt = "<sys>:You are helpful assistant, your theme is touhou lore.\n<USR>who is Marisa"
+    return ctx
 
-if use_tee:
-    assert filename, "Filename required for a tee mode"
-    file_dst = open(filename, "a")
 
-prompt = convert_prompt(raw_prompt)
-N_PREDICT = 0
-request_data = {"prompt": prompt, "stream": True, "params": {"n_predict": N_PREDICT}}
+ctx = parse_args()
 
-response = requests.get(f"http://localhost:{PORT}/props")
+
+if ctx.use_tee:
+    assert ctx.filename, "Filename required for a tee mode"
+    ctx.file_dst = open(ctx.filename, "a")
+
+prompt = convert_prompt(ctx)
+request_data = {
+    "prompt": prompt,
+    "stream": True,
+    "params": {"n_predict": ctx.n_predict},
+}
+
+response = requests.get(ctx.url("/props"))
 props = response.content.decode()
 props_dict = json.loads(props)
 model_id = props_dict["model_path"]
@@ -125,9 +158,7 @@ current_line = ""
 received = 0
 line_mode = True
 try:
-    response = requests.post(
-        f"http://localhost:{PORT}/completion", json=request_data, stream=True
-    )
+    response = requests.post(ctx.url("/completion"), json=request_data, stream=True)
     response.raise_for_status()
     for bdata in response.iter_lines():
         # iter_lines(decode_unicode=True incorrectly assumes encodeding)
@@ -137,11 +168,11 @@ try:
         content = json.loads(data)["content"]
         total_response += content
         print(content, flush=True, end="")
-        if file_dst:
-            file_dst.write(content)
-            file_dst.flush()
+        if ctx.file_dst:
+            ctx.file_dst.write(content)
+            ctx.file_dst.flush()
         received += 1
-        if N_PREDICT > 0 and received >= N_PREDICT:
+        if ctx.n_predict and received >= ctx.n_predict:
             response.close()
             break
     print(current_line)
@@ -153,9 +184,10 @@ except Exception as e:
     error_message = f"{e}"
     raise e
 finally:
-    if file_dst:
-        file_dst.close()
+    ctx.close_dst_file()
 
-mode = "chat" if use_prompt else "raw"
-request_data["raw_prompt"] = raw_prompt
-log(model_id, mode, json.dumps(request_data), total_response, error_message)
+mode = "chat" if ctx.use_prompt else "raw"
+request_data["input_prompt"] = ctx.input_prompt
+request_data["raw_prompt"] = prompt
+log(ctx, model_id, mode, json.dumps(request_data), total_response, error_message)
+
