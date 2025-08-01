@@ -123,7 +123,7 @@ function M.tee()
 	end
 
 	if M.MODEL == LLAMA_CPP_SERVER_NOTHINK or M.MODEL == LLAMA_CPP_SERVER_THINK then
-		local cmd = "!llama.cpp-raw-query.py --tee --file " .. path
+		local cmd = "!llama.cpp-raw-query.py --raw --file " .. path
 		return vim.cmd(cmd)
 	end
 

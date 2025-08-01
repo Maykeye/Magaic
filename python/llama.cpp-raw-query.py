@@ -5,6 +5,8 @@ import json
 import sys
 import sqlite3
 import os
+from pathlib import Path
+import argparse
 from dataclasses import dataclass
 
 
@@ -17,7 +19,6 @@ class Context:
 
     use_prompt: bool = True
     use_think: bool = True
-    use_tee: bool = False
     filename: Optional[str] = None
     file_dst: Optional[TextIO] = None
     n_predict: int = 0
@@ -107,28 +108,35 @@ def convert_prompt(ctx: Context):
 
 
 def parse_args() -> Context:
+    parser = argparse.ArgumentParser(
+        prog="llama.cpp-raw-query",
+        description="Send a query to llama.cpp directly",
+        epilog=(
+            "Please note, the logging is done into file set up by LLM_QUERY_LOGGING_PATH variable\n"
+            "Non-raw mode parses <ai>/<user>/<system>prefixes"
+        ),
+    )
+    parser.add_argument(
+        "--raw", help="Enable raw mode", default=False, action="store_true"
+    )
+    parser.add_argument(
+        "--no-think", help="Disables thinking", default=False, action="store_true"
+    )
+    parser.add_argument("--filename", help="Filename to read the prompt from", type=str)
+    parser.add_argument("prompt", nargs="?", type=str)
+    res = parser.parse_args(sys.argv[1:])
     ctx = Context()
-    if len(sys.argv) > 1:
-        if sys.argv[1] in ("--raw", "--tee"):
-            ctx.use_tee = sys.argv[1] == "--tee"
-            ctx.use_prompt = False
-            del sys.argv[1]
+    ctx.use_prompt = not res.raw
+    ctx.use_think = not res.no_think
+    print(res.filename)
+    ctx.filename = res.filename
 
-    if sys.argv[1] == "--no-think":
-        del sys.argv[1]
-        ctx.use_think = False
-
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "--file":
-            assert len(sys.argv) == 3
-            ctx.filename = sys.argv[2]
-            ctx.input_prompt = open(ctx.filename).read()
-        else:
-            ctx.input_prompt = sys.argv[1]
+    if ctx.filename:
+        ctx.input_prompt = Path(ctx.filename).read_text()
     else:
-        ctx.input_prompt = "<sys>:You are helpful assistant, your theme is touhou lore.\n<USR>who is Marisa"
-    if ctx.use_tee:
-        assert ctx.filename, "Filename required for a tee mode"
+        ctx.input_prompt = res.prompt
+
+    if ctx.filename:
         ctx.file_dst = open(ctx.filename, "a")
     return ctx
 
@@ -188,4 +196,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
