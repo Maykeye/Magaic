@@ -3,22 +3,10 @@
 I couldn't find local LLM plugin for neovim which I liked. I made a new one.
 I also don't like it, but as saying goes "There are many like it, but this one is mine."
 
-### My plugin to talk with local ai served by ollama
+### My plugin to talk with local ai served by llama.cpp
 
-Can either call completition checkpoint or chat. 
-Also it called is wrapped in python script, because ollama binaryt loves to spit(as llama ought to) ansi codes.
-Python script doesn't use 3rd party libraries, no venv is required.
-
-For chat the following format is required
-
-```
-<SYS>this is system prompt
-<USER>: this is what user is s
-<AI>: this is ai
-```
-
-Note `: ` after talker -- both are optional
-
+Can call only completion endpoint. Base model is expected.
+As of now python used to to avoid PITA running curl or similar program.
 
 ### Setting up with Lazy
 
@@ -27,7 +15,6 @@ Note `: ` after talker -- both are optional
 
 ### Usage:
 
-First, we need to init it via `:MagaicShow` (`<leader>ms`). It's special buffer which is never saved.
-Type someting. Use `:MagaicComplete`(`<leader>mr`) for usual complete (`/api/generate`) or use `:MagaicChat` (`<leader>mc`) to apply formatting for chat(`/api/chat`). 
+Open up the file to which the model will append text to the end. Then `:MagaicTee` (`<leader>mt`)
 
-Python script(`python/ollama-query.py`) should be in path
+Python script(`python/llama.cpp-raq-query.py`) should be in `$PATH`
