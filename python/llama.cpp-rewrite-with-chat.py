@@ -104,10 +104,13 @@ import sys
 
 @dataclass
 class PrintWithoutEndTag:
+    stops: list[str]
     line: str = ""
 
+    def __post_init__(self):
+        assert len(self.stops) == 1, "multiple stops reserved for future"
+
     def __call__(self, txt: str):
-        STOP = "<|rewrite-end|>"
         # There are some tokens that have \n in the middle.
         # Making sure main logic has no to deal with it,
         # it simplifies it
@@ -123,14 +126,15 @@ class PrintWithoutEndTag:
 
         self.line += txt
 
-        if self.line.startswith(STOP):
-            # the line was started via stop word.
-            # Whatever happened later irrelevant
-            return
+        for stop in self.stops:
+            if self.line.startswith(stop):
+                # the line was started via stop word.
+                # Whatever happened later irrelevant
+                return
 
-        if STOP.startswith(self.line):
-            # We don't know if it safe to print or not
-            return
+            if stop.startswith(self.line):
+                # We don't know if it safe to print or not
+                return
 
         # We can discard the cache as we know it's safe to print
         print(self.line, end="", flush=True)
@@ -169,7 +173,7 @@ def main():
 
     print("goes to")
     print("\n```")
-    generate(prompt, PrintWithoutEndTag(), prompter.stop())
+    generate(prompt, PrintWithoutEndTag(prompter.stop()), prompter.stop())
     print("```")
 
 
