@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-from typing import Callable, Optional, TextIO
+from typing import Callable
 import requests
 import json
 import os
 import argparse
 from pathlib import Path
-
+from dataclasses import dataclass
 
 OUTPUT_ENABLED = False
 URL_CHAT = (
@@ -99,9 +99,42 @@ Section to rewrite:
         ]
 
 
-def do_print(txt: str):
-    txt = txt or "\n"
-    print(txt, end="", flush=True)
+import sys
+
+
+@dataclass
+class PrintWithoutEndTag:
+    line: str = ""
+
+    def __call__(self, txt: str):
+        STOP = "<|rewrite-end|>"
+        # There are some tokens that have \n in the middle.
+        # Making sure main logic has no to deal with it,
+        # it simplifies it
+        if len(txt) >= 2 and "\n" in txt:
+            idx = txt.find("\n")
+            head, tail = txt[:idx], txt[idx + 1 :]
+            if head:
+                self(head)
+            self("\n")
+            if tail:
+                self(tail)
+            return
+
+        self.line += txt
+
+        if self.line.startswith(STOP):
+            # the line was started via stop word.
+            # Whatever happened later irrelevant
+            return
+
+        if STOP.startswith(self.line):
+            # We don't know if it safe to print or not
+            return
+
+        # We can discard the cache as we know it's safe to print
+        print(self.line, end="", flush=True)
+        self.line = ""
 
 
 def main():
@@ -136,7 +169,7 @@ def main():
 
     print("goes to")
     print("\n```")
-    generate(prompt, do_print, prompter.stop())
+    generate(prompt, PrintWithoutEndTag(), prompter.stop())
     print("```")
 
 
