@@ -45,7 +45,8 @@ class DefaultTemplate:
 
     def __call__(self, start: int, end: int, instruction: str):
         lines = self.lines.copy()
-        section = f"<|rewrite-start|>\n{'\n'.join(lines[start:end])}\n<|rewrite-end|>"
+        raw_section = "\n".join(lines[start:end])
+        section = f"<|rewrite-start|>\n{raw_section}\n<|rewrite-end|>"
         lines[start] = f"<|rewrite-start|>\n{lines[start]}"
         lines[end] = f"<|rewrite-end|>\n{lines[end]}"
         content = "\n".join(lines)
@@ -78,7 +79,6 @@ Section to rewrite:
             instruction=instruction,
             section=section,
         ).strip()
-        print(m1)
         m2 = "I understood I need to rewrite the text. Here is the new version\n<|rewrite-start|>\n"
         return [
             {"role": "system", "content": s},
@@ -118,7 +118,14 @@ def main():
 
     prompter = DefaultTemplate(file)
     prompt = prompter(start, end, prompt)
-    return generate(prompt, do_print)
+    print("```")
+    print(prompt[1]["content"])
+    print("```\n")
+
+    print("goes to")
+    print("\n```")
+    generate(prompt, do_print)
+    print("```")
 
 
 if __name__ == "__main__":
