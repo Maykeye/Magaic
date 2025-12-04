@@ -164,14 +164,8 @@ def main():
 
     prompter = DefaultTemplate(file)
     prompt = prompter(start, end, prompt)
-    print("```")
-    print(prompt[1]["content"])
-    print("```\n")
 
-    print("goes to")
-    print("\n```")
     generate(prompt, PrintWithoutEndTag(prompter.stop()), prompter.stop())
-    print("```")
 
 
 if __name__ == "__main__":
