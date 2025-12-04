@@ -99,9 +99,6 @@ Section to rewrite:
         ]
 
 
-import sys
-
-
 @dataclass
 class PrintWithoutEndTag:
     stops: list[str]
