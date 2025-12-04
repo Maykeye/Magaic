@@ -38,9 +38,19 @@ def generate(messages: list[dict], on_text: Callable[[str], None]):
     on_text("")
 
 
-def default_template(filename: str, content: str, instruction: str):
-    s = "You are a helpful assistant."
-    m1 = """\
+class DefaultTemplate:
+    def __init__(self, filename: str):
+        self.filename = filename
+        self.lines = Path(filename).read_text().splitlines()
+
+    def __call__(self, start: int, end: int, instruction: str):
+        lines = self.lines.copy()
+        section = f"<|rewrite-start|>\n{'\n'.join(lines[start:end])}\n<|rewrite-end|>"
+        lines[start] = f"<|rewrite-start|>\n{lines[start]}"
+        lines[end] = f"<|rewrite-end|>\n{lines[end]}"
+        content = "\n".join(lines)
+        s = "You are a helpful assistant."
+        m1 = """
 * You will be given a document named `{filename}` whose content will be placed between `<|document-start|>` and `<|document-end|>` tags.
 * Your task is to rewrite a part of the given document according to the instruction that will be placed between `<|instruction-start|>` and `<|instruction-end|>` tags
 * Part that needs to be rewritten will be marked with `<|rewrite-start|>` and `<|rewrite-end|>` tags.
@@ -48,6 +58,7 @@ def default_template(filename: str, content: str, instruction: str):
 * Your reply must start with acknowledgement of the task, followed by `<|rewrite-start|>`
 * Your reply must end with `<|rewrite-end|>`
 * Your reply must contain only the rewritten part. No additional commentary is required.
+* Your rewrite should only rewrite selected section, it should not rewrite previous or the next
 * That output will be copy-pasted instead of the original part.
 
 <|document-start|>
@@ -58,15 +69,22 @@ Instruction:
 <|instruction-start|>
 {instruction}
 <|instruction-end|>
+
+Section to rewrite:
+{section}
 """.format(
-        filename=filename, content=content, instruction=instruction
-    )
-    m2 = "I understood I need to rewrite the text. Here is the new version\n<|rewrite-start|>\n"
-    return [
-        {"role": "system", "content": s},
-        {"role": "user", "content": m1},
-        {"role": "assistant", "content": m2},
-    ]
+            filename=self.filename,
+            content=content,
+            instruction=instruction,
+            section=section,
+        ).strip()
+        print(m1)
+        m2 = "I understood I need to rewrite the text. Here is the new version\n<|rewrite-start|>\n"
+        return [
+            {"role": "system", "content": s},
+            {"role": "user", "content": m1},
+            {"role": "assistant", "content": m2},
+        ]
 
 
 def do_print(txt: str):
@@ -78,17 +96,28 @@ def main():
     args = argparse.ArgumentParser()
     args.add_argument("--prompt", type=str)
     args.add_argument("--file", type=str)
+    args.add_argument(
+        "--range",
+        type=str,
+        help="Line range in form of start..end (e.g. 4..5), start included, end not",
+    )
 
     ns = args.parse_args()
 
     file = ns.file
     prompt = ns.prompt
+    assert ns.range
+    assert ".." in ns.range
     assert file
     assert prompt
+    (start, end) = (int(x) for x in ns.range.split(".."))
+    assert start < end
 
-    text = Path(file).read_text()
-    prompt = default_template(file, text, prompt)
-    # print(prompt)
+    lines = Path(file).read_text().splitlines()
+    assert end < len(lines)
+
+    prompter = DefaultTemplate(file)
+    prompt = prompter(start, end, prompt)
     return generate(prompt, do_print)
 
 
