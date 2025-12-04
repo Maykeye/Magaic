@@ -13,11 +13,13 @@ URL_CHAT = (
 )
 
 
-def generate(messages: list[dict], on_text: Callable[[str], None]):
+def generate(messages: list[dict], on_text: Callable[[str], None], stop: list[str]):
     request_data = {
         "messages": messages,
         "stream": True,
     }
+    if stop:
+        request_data["stop"] = stop
 
     response = requests.post(URL_CHAT, json=request_data, stream=True)
     response.raise_for_status()
@@ -43,9 +45,19 @@ class DefaultTemplate:
         self.filename = filename
         self.lines = Path(filename).read_text().splitlines()
 
+    def stop(self):
+        return ["<|rewrite-end|>"]
+
+    def get_todo(self, instruction):
+        return os.environ.get("LLAMA_TODO", f"// TODO: {instruction}")
+
     def __call__(self, start: int, end: int, instruction: str):
         lines = self.lines.copy()
         raw_section = "\n".join(lines[start:end])
+        if raw_section.strip() == "":
+            lines[start] += self.get_todo(instruction)
+            raw_section = "\n".join(lines[start:end])
+
         section = f"<|rewrite-start|>\n{raw_section}\n<|rewrite-end|>"
         lines[start] = f"<|rewrite-start|>\n{lines[start]}"
         lines[end] = f"<|rewrite-end|>\n{lines[end]}"
@@ -110,7 +122,7 @@ def main():
     assert ".." in ns.range
     assert file
     assert prompt
-    (start, end) = (int(x) for x in ns.range.split(".."))
+    (start, end) = (int(x) - 1 for x in ns.range.split(".."))
     assert start < end
 
     lines = Path(file).read_text().splitlines()
@@ -124,7 +136,7 @@ def main():
 
     print("goes to")
     print("\n```")
-    generate(prompt, do_print)
+    generate(prompt, do_print, prompter.stop())
     print("```")
 
 
